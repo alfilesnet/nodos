@@ -1,0 +1,470 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GW2 Home Instance Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #222;
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: black;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            min-width: 200px;
+            background-color: #f5f5f5;
+            color: black;
+        }
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .content {
+            display: flex;
+            gap: 20px;
+        }
+        .left-panel {
+            flex: 1;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 600px;
+            overflow-y: auto;
+            background-color: #111;
+        }
+        .right-panel {
+            flex: 1;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 10px;
+            background-color: #111;
+        }
+        .item-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+        }
+        .item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background-color: #222;
+        }
+        .item:hover {
+            background-color: #333;
+            transform: translateY(-2px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .item img {
+            width: 64px;
+            height: 64px;
+            object-fit: contain;
+            margin-bottom: 5px;
+        }
+        .item-name {
+            font-size: 12px;
+            text-align: center;
+            word-break: break-word;
+        }
+        .disabled {
+            opacity: 0.5;
+        }
+        .detail-view {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .detail-view img {
+            width: 128px;
+            height: 128px;
+            object-fit: contain;
+            margin-bottom: 20px;
+        }
+        .detail-info {
+            width: 100%;
+        }
+        .detail-info h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+        .detail-row {
+            margin-bottom: 10px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #ccc;
+        }
+        .gold {
+            color: gold;
+        }
+        .silver {
+            color: #ccc;
+        }
+        .copper {
+            color: #cd7f32;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>GW2 Home Instance Viewer</h1>
+            <select id="account-selector">
+                <!-- Account tokens will be added here -->
+            </select>
+        </div>
+        
+        <div class="buttons">
+            <button id="nodes-btn">Nodes</button>
+            <button id="cats-btn">Cats</button>
+        </div>
+        
+        <div class="content">
+            <div class="left-panel">
+                <div id="items-container" class="item-grid">
+                    <div class="loading">Loading nodes...</div>
+                </div>
+            </div>
+            <div class="right-panel">
+                <div id="detail-container">
+                    <div class="loading">Select an item to view details</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration - Add your API tokens here
+        const API_TOKENS = [
+            { name: "Alfiles", token: "F770E184-3761-FF4A-B134-6650D33678223A68B023-FAD0-46B3-BE8E-113303FB77D2" },
+            { name: "Cuenta secundaria", token: "CBC2B061-6D89-AC4B-B90D-88C05A1BC32CFA2FFC90-EF7C-47D5-9BAE-AF3E36D7CCC9" },
+            // Add more accounts as needed
+        ];
+        
+        // Global variables to store data
+        let nodesData = [];
+        let catsData = [];
+        let accountNodes = [];
+        let allItems = {};
+        let currentView = 'nodes';
+        
+        // DOM Elements
+        const accountSelector = document.getElementById('account-selector');
+        const nodesBtn = document.getElementById('nodes-btn');
+        const catsBtn = document.getElementById('cats-btn');
+        const itemsContainer = document.getElementById('items-container');
+        const detailContainer = document.getElementById('detail-container');
+        
+        // Initialize the application
+        function init() {
+            // Populate account selector with all accounts
+            API_TOKENS.forEach((account, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = account.name;
+                accountSelector.appendChild(option);
+            });
+            
+            // Select the first account by default
+            if (API_TOKENS.length > 0) {
+                accountSelector.value = 0;
+            }
+            
+            // Load items data from files
+            Promise.all([
+                fetchJSON('items_gw2.json'),
+                fetchJSON('items_gw2_en.json')
+            ]).then(([spanishItems, englishItems]) => {
+                // Process the items data
+                processItemsData(spanishItems, englishItems);
+                
+                // Add event listeners
+                setupEventListeners();
+                
+                // Load data for the first account automatically
+                if (API_TOKENS.length > 0) {
+                    loadAccountData(0);
+                }
+            }).catch(error => {
+                console.error('Error loading item data:', error);
+                itemsContainer.innerHTML = '<div class="loading">Error loading item data. Please check console for details.</div>';
+            });
+        }
+        
+        // Fetch JSON data
+        function fetchJSON(url) {
+            return fetch(url).then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            });
+        }
+        
+        // Process items data from JSON files
+        function processItemsData(spanishItems, englishItems) {
+            // Extract nodes from the Spanish items data
+            const spanishData = spanishItems[2].data;
+            spanishData.forEach(item => {
+                if (item.items_gw2_type === "Consumible" && item.items_gw2_name.includes("Nodo")) {
+                    nodesData.push({
+                        id: item.items_gw2_id_item,
+                        name: item.items_gw2_name,
+                        desc: item.items_gw2_desc,
+                        icon: item.items_gw2_icon,
+                        chat_link: item.items_gw2_chat_link,
+                        rarity: item.items_gw2_rarity,
+                        vendor_value: item.items_gw2_vendor_value
+                    });
+                    
+                    // Add to all items for lookup
+                    allItems[item.items_gw2_id_item] = {
+                        id: item.items_gw2_id_item,
+                        name: item.items_gw2_name,
+                        desc: item.items_gw2_desc,
+                        icon: item.items_gw2_icon,
+                        chat_link: item.items_gw2_chat_link,
+                        rarity: item.items_gw2_rarity,
+                        vendor_value: item.items_gw2_vendor_value
+                    };
+                }
+            });
+            
+            // Merge English data if available
+            const englishData = englishItems[2].data;
+            englishData.forEach(item => {
+                if (allItems[item.items_gw2_id_item]) {
+                    allItems[item.items_gw2_id_item].en_name = item.items_gw2_name;
+                    allItems[item.items_gw2_id_item].en_desc = item.items_gw2_desc;
+                }
+            });
+        }
+        
+        // Set up event listeners
+        function setupEventListeners() {
+            accountSelector.addEventListener('change', function() {
+                const selectedIndex = this.value;
+                loadAccountData(selectedIndex);
+            });
+            
+            nodesBtn.addEventListener('click', () => {
+                currentView = 'nodes';
+                renderItems();
+            });
+            
+            catsBtn.addEventListener('click', () => {
+                currentView = 'cats';
+                renderItems();
+            });
+        }
+        
+        // Load account data
+        function loadAccountData(accountIndex) {
+            itemsContainer.innerHTML = '<div class="loading">Loading account data...</div>';
+            
+            const token = API_TOKENS[accountIndex].token;
+            
+            // Fetch account home nodes
+            fetch(`https://api.guildwars2.com/v2/account/home/nodes?access_token=${token}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    accountNodes = data;
+                    renderItems();
+                    
+                    // If there are nodes available, show the first one's details
+                    if (nodesData.length > 0) {
+                        const firstNode = nodesData[0];
+                        const nodeId = convertToApiId(firstNode.id);
+                        const isOwned = accountNodes.includes(nodeId);
+                        showItemDetails(firstNode, isOwned);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching account data:', error);
+                    itemsContainer.innerHTML = '<div class="loading">Error fetching account data. Please check console for details.</div>';
+                });
+        }
+        
+        // Render items based on current view
+        function renderItems() {
+            if (currentView === 'nodes') {
+                renderNodes();
+            } else {
+                renderCats();
+            }
+        }
+        
+        // Render nodes
+        function renderNodes() {
+            itemsContainer.innerHTML = '';
+            
+            nodesData.forEach(node => {
+                const nodeId = convertToApiId(node.id);
+                const isOwned = accountNodes.includes(nodeId);
+                
+                const itemElement = document.createElement('div');
+                itemElement.className = `item ${isOwned ? '' : 'disabled'}`;
+                itemElement.innerHTML = `
+                    <img src="${node.icon}" alt="${node.name}">
+                    <div class="item-name">${node.name}</div>
+                `;
+                
+                // Add click listener to all items, even disabled ones
+                itemElement.addEventListener('click', () => {
+                    showItemDetails(node, isOwned);
+                });
+                
+                itemsContainer.appendChild(itemElement);
+            });
+        }
+        
+        // Render cats (placeholder for now)
+        function renderCats() {
+            itemsContainer.innerHTML = '<div class="loading">Cats functionality is not implemented yet</div>';
+        }
+        
+        // Show item details
+        function showItemDetails(item, isOwned) {
+            detailContainer.innerHTML = '<div class="loading">Loading item details...</div>';
+            
+            // Fetch trading post prices
+            fetch(`https://api.guildwars2.com/v2/commerce/prices/${item.id}`)
+                .then(response => {
+                    if (!response.ok) {
+                        // Item might not be tradeable
+                        return { buys: { unit_price: 'N/A' }, sells: { unit_price: 'N/A' } };
+                    }
+                    return response.json();
+                })
+                .then(priceData => {
+                    // Format the item details
+                    const buyPrice = typeof priceData.buys?.unit_price === 'number' 
+                        ? formatColoredGoldPrice(priceData.buys.unit_price) 
+                        : 'Not tradeable';
+                    
+                    const sellPrice = typeof priceData.sells?.unit_price === 'number' 
+                        ? formatColoredGoldPrice(priceData.sells.unit_price) 
+                        : 'Not tradeable';
+                    
+                    const ownershipStatus = isOwned ? 
+                        '<div class="detail-row" style="color: #4CAF50;"><strong>Estado:</strong> Desbloqueado en tu cuenta</div>' : 
+                        '<div class="detail-row" style="color: #f44336;"><strong>Estado:</strong> No desbloqueado</div>';
+                    
+                    detailContainer.innerHTML = `
+                        <div class="detail-view">
+                            <img src="${item.icon}" alt="${item.name}">
+                            <div class="detail-info">
+                                <h3>${item.name}</h3>
+                                ${ownershipStatus}
+                                <div class="detail-row">
+                                    <strong>Descripción:</strong> ${item.desc}
+                                </div>
+                                <div class="detail-row">
+                                    <strong>Chat Link:</strong> ${item.chat_link}
+                                </div>
+                                <div class="detail-row">
+                                    <strong>Precio de compra del nodo:</strong> ${buyPrice}
+                                </div>
+                                <div class="detail-row">
+                                    <strong>Precio de venta del nodo:</strong> ${sellPrice}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    console.error('Error fetching item details:', error);
+                    detailContainer.innerHTML = `
+                        <div class="detail-view">
+                            <img src="${item.icon}" alt="${item.name}">
+                            <div class="detail-info">
+                                <h3>${item.name}</h3>
+                                <div class="detail-row">
+                                    <strong>Descripción:</strong> ${item.desc}
+                                </div>
+                                <div class="detail-row">
+                                    <strong>Chat Link:</strong> ${item.chat_link}
+                                </div>
+                                <div class="detail-row">
+                                    <strong>Error fetching price data</strong>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+        }
+        
+        // Convert item ID to API ID format
+        function convertToApiId(itemId) {
+            // This is a placeholder - you may need to adjust based on actual API format
+            return `basic_ore_nodes`;  // Example conversion
+        }
+        
+        // Format gold price with colored spans
+        function formatColoredGoldPrice(price) {
+            const gold = Math.floor(price / 10000);
+            const silver = Math.floor((price % 10000) / 100);
+            const copper = price % 100;
+            
+            // Format numbers to ensure two digits for silver and copper
+            const goldStr = gold.toString();
+            const silverStr = silver.toString().padStart(2, '0');
+            const copperStr = copper.toString().padStart(2, '0');
+            
+            return `
+                <span class="gold">${goldStr}</span>
+                <span class="silver">${silverStr}</span>
+                <span class="copper">${copperStr}</span>
+            `;
+        }
+        
+        // Initialize the app
+        init();
+    </script>
+</body>
+</html>
